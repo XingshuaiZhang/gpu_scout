@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# GPUScout 安装脚本：安装依赖、生成 systemd 服务并启用
+# GPUScout 安装脚本：安装依赖、生成 systemd user 服务并启用（无需 sudo）
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVICE_NAME="gpu_scout"
-SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+SERVICE_DIR="${HOME}/.config/systemd/user"
+SERVICE_FILE="${SERVICE_DIR}/${SERVICE_NAME}.service"
 
 # ---- 检测环境 ----
 
-CURRENT_USER="$(whoami)"
 PYTHON_BIN="$(which python3)"
 
 echo "==> 安装目录:  $SCRIPT_DIR"
-echo "==> 运行用户:  $CURRENT_USER"
 echo "==> Python:    $PYTHON_BIN"
+echo "==> 服务文件:  $SERVICE_FILE"
 
 # ---- 安装 Python 依赖 ----
 
@@ -33,34 +33,33 @@ if [[ ! -f "$SCRIPT_DIR/config.yaml" ]]; then
     echo "    编辑：$SCRIPT_DIR/config.yaml"
 fi
 
-# ---- 生成 systemd service 文件 ----
+# ---- 生成 systemd user service 文件 ----
 
 echo ""
 echo "==> 生成 ${SERVICE_NAME}.service..."
 
-cat > "$SCRIPT_DIR/${SERVICE_NAME}.service" <<EOF
+mkdir -p "$SERVICE_DIR"
+cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=GPUScout GPU Idle Monitor
 After=network.target
 
 [Service]
 Type=simple
-User=${CURRENT_USER}
 WorkingDirectory=${SCRIPT_DIR}
 ExecStart=${PYTHON_BIN} ${SCRIPT_DIR}/gpu_scout.py monitor
 Restart=on-failure
 RestartSec=30
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 EOF
 
-# ---- 安装并启用服务 ----
+# ---- 启用服务 ----
 
-echo "==> 安装服务到 $SERVICE_FILE..."
-sudo cp "$SCRIPT_DIR/${SERVICE_NAME}.service" "$SERVICE_FILE"
-sudo systemctl daemon-reload
-sudo systemctl enable "$SERVICE_NAME"
+systemctl --user daemon-reload
+systemctl --user enable "$SERVICE_NAME"
+
 echo ""
 echo "======================================"
 echo " 安装完成！"
@@ -71,9 +70,9 @@ echo "   1. 编辑配置：$SCRIPT_DIR/config.yaml"
 echo "      填写 serverchan_key（Server酱 SendKey）"
 echo ""
 echo "   2. 启动服务："
-echo "      sudo systemctl start $SERVICE_NAME"
+echo "      systemctl --user start $SERVICE_NAME"
 echo ""
 echo "   3. 查看状态："
-echo "      sudo systemctl status $SERVICE_NAME"
+echo "      systemctl --user status $SERVICE_NAME"
 echo "      tail -f $SCRIPT_DIR/gpu_scout.log"
 echo ""

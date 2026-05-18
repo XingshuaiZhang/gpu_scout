@@ -51,8 +51,8 @@ bash install.sh
 # 1. 编辑配置，填入 SendKey
 nano config.yaml
 
-# 2. 启动服务
-sudo systemctl start gpu_scout
+# 2. 启动服务（无需 sudo）
+systemctl --user start gpu_scout
 ```
 
 ---
@@ -113,11 +113,11 @@ print(r.json())
 python3 gpu_scout.py monitor
 ```
 
-安装为 systemd 服务（开机自启）：
+安装为 systemd 服务（开机自启，无需 sudo）：
 
 ```bash
 bash install.sh
-sudo systemctl start gpu_scout
+systemctl --user start gpu_scout
 ```
 
 ---
@@ -168,12 +168,14 @@ journalctl -u gpu_scout -f
 
 ## 服务管理
 
+所有命令均无需 `sudo`：
+
 ```bash
-sudo systemctl start gpu_scout     # 启动
-sudo systemctl stop gpu_scout      # 停止
-sudo systemctl restart gpu_scout   # 重启（修改配置后执行）
-sudo systemctl status gpu_scout    # 查看运行状态
-sudo systemctl disable gpu_scout   # 取消开机自启
+systemctl --user start gpu_scout     # 启动
+systemctl --user stop gpu_scout      # 停止
+systemctl --user restart gpu_scout   # 重启（修改配置后执行）
+systemctl --user status gpu_scout    # 查看运行状态
+systemctl --user disable gpu_scout   # 取消开机自启
 ```
 
 ---
