@@ -199,16 +199,19 @@ def cmd_monitor() -> None:
             st.was_idle = g.is_idle
 
         if newly_idle:
-            lines = "\n".join(f"- {g.summary()}" for g in newly_idle)
+            total = len(gpus)
+            all_idle = [g for g in gpus if g.is_idle]
+            new_lines = "\n".join(f"- {g.summary()}" for g in newly_idle)
+            all_lines = "\n".join(f"- {g.summary()}" for g in all_idle)
             send_serverchan(
-                f"GPUScout: {len(newly_idle)} 张卡空闲了",
-                f"**新增空闲显卡**\n\n{lines}",
+                f"GPUScout: {len(newly_idle)} 张卡空闲（当前共 {len(all_idle)}/{total} 张空闲）",
+                f"**新增空闲**\n\n{new_lines}\n\n**当前所有空闲卡**\n\n{all_lines}",
             )
             for g in newly_idle:
                 logging.info("GPU %d 变为空闲 (%d MiB used)", g.index, g.mem_used_mib)
         else:
             idle_count = sum(1 for g in gpus if g.is_idle)
-            logging.info("巡检完成  空闲: %d/10", idle_count)
+            logging.info("巡检完成  空闲: %d/%d", idle_count, len(gpus))
 
 
 # ---------------------------------------------------------------------------

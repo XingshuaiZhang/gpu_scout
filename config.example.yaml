@@ -11,7 +11,7 @@ poll_interval: 60
 idle_memory_threshold_mib: 500
 
 # 同一张卡变为空闲后，多少秒内不重复通知（防刷屏）
-notify_cooldown_seconds: 300
+notify_cooldown_seconds: 18000
 
 # 日志文件路径
 # - 相对路径：相对于本配置文件所在目录
