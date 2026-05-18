@@ -1,0 +1,20 @@
+# GPUScout 配置文件
+# 使用方法：cp config.example.yaml config.yaml，然后填写下方的 SendKey
+
+# Server酱 SendKey：https://sct.ftqq.com/ 注册后获取
+serverchan_key: "YOUR_SENDKEY_HERE"
+
+# 轮询间隔（秒）
+poll_interval: 60
+
+# 判断"空闲"的阈值：显存占用低于此值（MiB）则认为空闲
+idle_memory_threshold_mib: 500
+
+# 同一张卡变为空闲后，多少秒内不重复通知（防刷屏）
+notify_cooldown_seconds: 300
+
+# 日志文件路径
+# - 相对路径：相对于本配置文件所在目录
+# - 绝对路径：直接使用
+# - 留空：只输出到终端（stdout）
+log_file: "gpu_scout.log"
