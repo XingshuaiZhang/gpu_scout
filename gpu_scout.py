@@ -26,7 +26,10 @@ class GPUInfo:
 
     @property
     def is_idle(self) -> bool:
-        return self.mem_used_mib < _cfg["idle_memory_threshold_mib"]
+        return (
+            self.mem_used_mib < _cfg["idle_memory_threshold_mib"]
+            and self.util_pct < _cfg.get("idle_util_threshold_pct", 5)
+        )
 
     def summary(self) -> str:
         status = "空闲 ✓" if self.is_idle else "占用"
@@ -138,7 +141,7 @@ def cmd_status() -> None:
     busy = [g for g in gpus if not g.is_idle]
     print(f"\n{'='*50}")
     print(f"共 {len(gpus)} 张 GPU  |  空闲: {len(idle)}  占用: {len(busy)}")
-    print(f"空闲阈值: 显存 < {_cfg['idle_memory_threshold_mib']} MiB")
+    print(f"空闲阈值: 显存 < {_cfg['idle_memory_threshold_mib']} MiB  且  利用率 < {_cfg.get('idle_util_threshold_pct', 5)}%")
     print(f"{'='*50}")
     for g in gpus:
         print(" ", g.summary())
