@@ -3,6 +3,7 @@
 
 import argparse
 import logging
+import pwd
 import sys
 import time
 from dataclasses import dataclass, field
@@ -23,6 +24,7 @@ class GPUInfo:
     mem_used_mib: int
     mem_total_mib: int
     util_pct: int
+    users: list[str] = field(default_factory=list)
 
     @property
     def is_idle(self) -> bool:
@@ -30,6 +32,10 @@ class GPUInfo:
             self.mem_used_mib < _cfg["idle_memory_threshold_mib"]
             and self.util_pct < _cfg.get("idle_util_threshold_pct", 5)
         )
+
+    @property
+    def mem_pct(self) -> int:
+        return self.mem_used_mib * 100 // self.mem_total_mib if self.mem_total_mib else 0
 
     def summary(self) -> str:
         status = "空闲 ✓" if self.is_idle else "占用"
@@ -39,12 +45,14 @@ class GPUInfo:
             f"利用率 {self.util_pct}%"
         )
 
-
-@dataclass
-class GPUState:
-    """Per-GPU tracking: previous idle status and last notification time."""
-    was_idle: bool = False
-    last_notified: float = 0.0
+    def notify_line(self) -> str:
+        mark = "🟢 空闲" if self.is_idle else "🔴 占用"
+        users = ",".join(self.users) if self.users else "—"
+        return (
+            f"- [GPU {self.index}] {mark}  "
+            f"{self.mem_used_mib}/{self.mem_total_mib} MiB ({self.mem_pct}%)  "
+            f"用户: {users}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +92,29 @@ def setup_logging(log_file: str | None) -> None:
 # GPU querying
 # ---------------------------------------------------------------------------
 
+def _process_users(handle) -> list[str]:
+    """Return a sorted, de-duplicated list of usernames running on this GPU."""
+    procs = []
+    for fn in (pynvml.nvmlDeviceGetComputeRunningProcesses,
+               pynvml.nvmlDeviceGetGraphicsRunningProcesses):
+        try:
+            procs += fn(handle)
+        except pynvml.NVMLError:
+            pass
+    seen: set[str] = set()
+    for p in procs:
+        try:
+            with open(f"/proc/{p.pid}/status") as f:
+                for line in f:
+                    if line.startswith("Uid:"):
+                        uid = int(line.split()[1])
+                        seen.add(pwd.getpwuid(uid).pw_name)
+                        break
+        except (FileNotFoundError, KeyError, ProcessLookupError, PermissionError):
+            continue
+    return sorted(seen)
+
+
 def query_gpus() -> list[GPUInfo]:
     pynvml.nvmlInit()
     count = pynvml.nvmlDeviceGetCount()
@@ -104,6 +135,7 @@ def query_gpus() -> list[GPUInfo]:
             mem_used_mib=mem.used // (1024 ** 2),
             mem_total_mib=mem.total // (1024 ** 2),
             util_pct=util,
+            users=_process_users(h),
         ))
     pynvml.nvmlShutdown()
     return gpus
@@ -113,21 +145,23 @@ def query_gpus() -> list[GPUInfo]:
 # Notification via Server酱
 # ---------------------------------------------------------------------------
 
-def send_serverchan(title: str, content: str) -> None:
+def send_serverchan(title: str, content: str) -> bool:
     key = _cfg.get("serverchan_key", "")
     if not key or key == "YOUR_SENDKEY_HERE":
         logging.warning("Server酱 SendKey 未配置，跳过推送")
-        return
+        return False
     url = f"https://sctapi.ftqq.com/{key}.send"
     try:
         resp = requests.post(url, data={"title": title, "desp": content}, timeout=10)
         data = resp.json()
         if data.get("code") == 0:
             logging.info("推送成功: %s", title)
-        else:
-            logging.warning("推送返回异常: %s", data)
+            return True
+        logging.warning("推送返回异常: %s", data)
+        return False
     except Exception as e:
         logging.error("推送失败: %s", e)
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -156,65 +190,38 @@ def cmd_monitor() -> None:
     load_config(args_global.config)
     setup_logging(_cfg.get("log_file"))
 
-    interval = _cfg.get("poll_interval", 60)
-    cooldown = _cfg.get("notify_cooldown_seconds", 300)
+    poll_interval = _cfg.get("poll_interval", 60)
+    cooldown = _cfg.get("notify_cooldown_seconds", 4 * 3600)
     threshold = _cfg.get("idle_memory_threshold_mib", 500)
 
-    logging.info("GPUScout 启动  间隔=%ds  空闲阈值=%dMiB  冷却=%ds",
-                 interval, threshold, cooldown)
-
-    states: dict[int, GPUState] = {}
-
-    # 启动时发一次总览
-    gpus = query_gpus()
-    idle_at_start = [g for g in gpus if g.is_idle]
-    for g in gpus:
-        states[g.index] = GPUState(was_idle=g.is_idle)
-
-    if idle_at_start:
-        lines = "\n".join(f"- {g.summary()}" for g in idle_at_start)
-        send_serverchan(
-            f"GPUScout 启动: {len(idle_at_start)} 张卡空闲",
-            f"**空闲显卡列表**\n\n{lines}",
-        )
-        logging.info("启动时发现 %d 张空闲卡", len(idle_at_start))
-    else:
-        logging.info("启动时所有 GPU 均在使用中")
+    logging.info("GPUScout 启动  轮询=%ds  休眠=%ds  空闲阈值=%dMiB",
+                 poll_interval, cooldown, threshold)
 
     while True:
-        time.sleep(interval)
+        # ---- 活跃期：每 poll_interval 秒巡检一次 ----
         try:
             gpus = query_gpus()
         except Exception as e:
             logging.error("查询 GPU 失败: %s", e)
+            time.sleep(poll_interval)
             continue
 
-        now = time.time()
-        newly_idle: list[GPUInfo] = []
+        total = len(gpus)
+        idle = [g for g in gpus if g.is_idle]
+        logging.info("巡检完成  空闲: %d/%d", len(idle), total)
 
-        for g in gpus:
-            st = states.setdefault(g.index, GPUState(was_idle=g.is_idle))
-            if g.is_idle and not st.was_idle:
-                # 从忙碌变为空闲
-                if now - st.last_notified >= cooldown:
-                    newly_idle.append(g)
-                    st.last_notified = now
-            st.was_idle = g.is_idle
+        if idle:
+            title = f"当前有 {len(idle)}/{total} 张空闲显卡"
+            content = "\n".join(g.notify_line() for g in gpus)
+            if send_serverchan(title, content):
+                # ---- 休眠期 ----
+                logging.info("推送成功，进入休眠 %ds", cooldown)
+                time.sleep(cooldown)
+                logging.info("休眠结束，恢复活跃期")
+                continue
+            logging.info("推送未成功，留在活跃期")
 
-        if newly_idle:
-            total = len(gpus)
-            all_idle = [g for g in gpus if g.is_idle]
-            new_lines = "\n".join(f"- {g.summary()}" for g in newly_idle)
-            all_lines = "\n".join(f"- {g.summary()}" for g in all_idle)
-            send_serverchan(
-                f"GPUScout: {len(newly_idle)} 张卡空闲（当前共 {len(all_idle)}/{total} 张空闲）",
-                f"**新增空闲**\n\n{new_lines}\n\n**当前所有空闲卡**\n\n{all_lines}",
-            )
-            for g in newly_idle:
-                logging.info("GPU %d 变为空闲 (%d MiB used)", g.index, g.mem_used_mib)
-        else:
-            idle_count = sum(1 for g in gpus if g.is_idle)
-            logging.info("巡检完成  空闲: %d/%d", idle_count, len(gpus))
+        time.sleep(poll_interval)
 
 
 # ---------------------------------------------------------------------------

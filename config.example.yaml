@@ -4,15 +4,15 @@
 # Server酱 SendKey：https://sct.ftqq.com/ 注册后获取
 serverchan_key: "YOUR_SENDKEY_HERE"
 
-# 轮询间隔（秒）
+# 活跃期轮询间隔（秒），默认 1 分钟
 poll_interval: 60
 
 # 判断"空闲"的阈值：显存占用低于此值（MiB）且 GPU 利用率低于 idle_util_threshold_pct 才算空闲
 idle_memory_threshold_mib: 500
 idle_util_threshold_pct: 5
 
-# 同一张卡变为空闲后，多少秒内不重复通知（防刷屏）
-notify_cooldown_seconds: 18000
+# 推送成功后进入休眠期的时长（秒），默认 4 小时
+notify_cooldown_seconds: 14400
 
 # 日志文件路径
 # - 相对路径：相对于本配置文件所在目录
